@@ -25,14 +25,18 @@ def engineer_features(
     df["therapy_week"] = df["therapy_length_days"] // 7
 
     # Useful for indexing but will not be in the final model
-    df["ActivityDateTime"] = pd.to_datetime(df["ActivityDateTime"])
+    df["ActivityDateTime"] = pd.to_datetime(df["ActivityDateTime"], format=FORMAT_MIN)
 
     # Steps
-    df["Steps_15m"] = df["Steps"]
-    df["Steps_30m"] = df["Steps"].rolling(window=2, min_periods=1).sum()
-    df["Steps_45m"] = df["Steps"].rolling(window=3, min_periods=1).sum()
-    df["Steps_60m"] = df["Steps"].rolling(window=4, min_periods=1).sum()
+    df["steps_0_to_15m"] = df["Steps"]
+    df["steps_15_to_30m"] = df["Steps"].shift(1)
+    df["steps_30_to_45m"] = df["Steps"].shift(2)
+    df["steps_45_to_60m"] = df["Steps"].shift(3)
     df = df.drop("Steps", axis=1)
+
+    # Hrv
+    df["hrv_sdann_overnight_diff"] = df["hrv_sdann_overnight"] - df["hrv_sdann_avg_7d"]
+    # df = df.drop(["hrv_sdann_overnight", "hrv_sdann_avg_7d"], axis=1)
 
     # StressLevelValueAverage
     df["StressLevelValueAverage_15m"] = df["StressLevelValueAverage"]
@@ -64,8 +68,8 @@ def engineer_features(
             "Education Status",
             "Parental Status",
             "Employment Status",
-            "Pre.ECBI",
-            "Pre.ECBI.Prob",
+            # "Pre.ECBI",
+            # "Pre.ECBI.Prob",
             "Post.ECBI",
             "Post.ECBI.Prob",
             "QuitStudy",
@@ -163,3 +167,8 @@ def prep_X_y(df: pd.DataFrame, response_column: str) -> tuple[pd.DataFrame, pd.S
     )
     y = df[response_column].astype(int)
     return X, y
+
+
+FORMAT_DAY = "%m/%d/%Y"
+FORMAT_MIN = "%m/%d/%Y %I:%M %p"
+FORMAT_SEC = "%m/%d/%Y %I:%M:%S %p"

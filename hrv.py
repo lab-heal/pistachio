@@ -3,6 +3,8 @@ from datetime import datetime, time
 import numpy as np
 import pandas as pd
 
+from util import FORMAT_MIN, FORMAT_SEC
+
 MS_IN_MINUTE = 60_000
 
 
@@ -12,7 +14,7 @@ def process_hr_df(
     hr_col: str = "HeartRate",
 ) -> pd.DataFrame:
     df = hr_df.copy()
-    df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col], format=FORMAT_SEC)
     df.set_index(timestamp_col, inplace=True)
     return df
 
@@ -56,8 +58,11 @@ def daily_hrv_sdann_sleep(
         return sdann_from_hr(hr_slice)
 
     hrv = hr_df.groupby(hr_df.index.date).apply(compute_sdann)
-    hrv.name = "overnight_hrv_sdann"
-    return hrv
+    hrv_df = hrv.to_frame(name="hrv_sdann_overnight")
+    hrv_df["hrv_sdann_avg_7d"] = (
+        hrv_df["hrv_sdann_overnight"].rolling(window=7, min_periods=1).mean()
+    )
+    return hrv_df
 
 
 def sdann_from_hr(hr_df: pd.DataFrame) -> float:
@@ -79,7 +84,7 @@ def sleep_start_and_end_times(sleep_df: pd.DataFrame) -> pd.DataFrame:
     """
     df = sleep_df.copy()
 
-    df["sleep_start"] = pd.to_datetime(df["ActivityDateTime"])
+    df["sleep_start"] = pd.to_datetime(df["ActivityDateTime"], format=FORMAT_MIN)
     duration_cols = [
         "DeepSleepDurationInSeconds",
         "LightSleepDurationInSeconds",
