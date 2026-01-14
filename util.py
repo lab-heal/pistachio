@@ -1,29 +1,146 @@
+from dataclasses import dataclass
+from enum import Enum
+
 import numpy as np
 import pandas as pd
+
+
+class FeatureSetNames(Enum):
+    STRESS = (
+        "stress_avg_garmin_0_to_15m",
+        "stress_avg_garmin_15_to_30m",
+        "stress_avg_garmin_30_to_45m",
+        "stress_avg_garmin_45_to_60m",
+    )
+    OVERNIGHT_HRV = (
+        "hrv_sdann_overnight",
+        "hrv_sdann_avg_7d",
+        "hrv_sdann_overnight_diff",
+    )
+    MEDICAL = (
+        "Diag.ADHD",
+        "Diag.ASD",
+        "Diag.Anxiety",
+        "Diag.SAD",
+        "Child.On.Antidepressants",
+        "Child.On.Stimulants",
+        "Child.On.Non.Stimulants",
+    )
+    THERAPY = (
+        "Pre.ECBI",
+        "Pre.ECBI.Prob",
+        "therapy_length_days",
+    )
+    CHILD_DEMO = (
+        "Child sex",
+        "Child.Age",
+    )
+    PARENT_DEMO = (
+        "Education Status",
+        "Parent-PhoneType",
+        "Parental Status",
+        "Parent.Age",
+        "BothParentsInStudy",
+    )
+    TEMPORAL = (
+        "day_of_week_sin",
+        "day_of_week_cos",
+        "month_sin",
+        "month_cos",
+    )
+
+
+SLEEP_FEAT_PREFIXES = (
+    "awake",
+    "deep",
+    "light",
+    "rem",
+    "unmeasurable",
+)
+
+
+@dataclass
+class FeatureSets:
+    watch: pd.DataFrame
+    therapy: pd.DataFrame
+    overnight_hrv: pd.DataFrame
+    stress: pd.DataFrame
+    medical_history: pd.DataFrame
+    demographics: pd.DataFrame
+    temporal: pd.DataFrame
+
+    @staticmethod
+    def sleep_features(sleep_days_to_keep) -> list[str]:
+        return [
+            f"{prefix}_T-{day}"
+            for day in sleep_days_to_keep
+            for prefix in SLEEP_FEAT_PREFIXES
+        ]
+
+    @staticmethod
+    def create(df: pd.DataFrame, sleep_days_to_keep: list[int]) -> "FeatureSets":
+        sleep_feature_names = FeatureSets.sleep_features(sleep_days_to_keep)
+        watch_feature_names = [
+            col
+            for col in df.columns
+            if col
+            not in [
+                feature
+                for feature_set in FeatureSetNames
+                for feature in feature_set.value
+            ]
+            + sleep_feature_names
+        ]
+        return FeatureSets(
+            watch=pd.get_dummies(df[watch_feature_names], drop_first=True),
+            therapy=pd.get_dummies(
+                df[list(FeatureSetNames.THERAPY.value)], drop_first=True
+            ),
+            overnight_hrv=pd.get_dummies(
+                df[list(FeatureSetNames.OVERNIGHT_HRV.value)], drop_first=True
+            ),
+            stress=pd.get_dummies(
+                df[list(FeatureSetNames.STRESS.value)], drop_first=True
+            ),
+            medical_history=pd.get_dummies(
+                df[list(FeatureSetNames.MEDICAL.value)], drop_first=True
+            ),
+            demographics=pd.get_dummies(
+                df[
+                    list(FeatureSetNames.CHILD_DEMO.value)
+                    + list(FeatureSetNames.PARENT_DEMO.value)
+                ],
+                drop_first=True,
+            ),
+            temporal=pd.get_dummies(
+                df[list(FeatureSetNames.TEMPORAL.value)], drop_first=True
+            ),
+        )
+
+    def all_features(self) -> pd.DataFrame:
+        return pd.concat(
+            [
+                self.watch,
+                self.therapy,
+                self.overnight_hrv,
+                self.stress,
+                self.medical_history,
+                self.demographics,
+                self.temporal,
+            ],
+            axis=1,
+        )
+
+
+SLEEP_LOOKBACK_DAYS = list(range(0, 5))
 
 
 def engineer_features(
     df: pd.DataFrame,
     stress_lookback_days=0,
-    sleep_lookback_range=(0, 0),
+    sleep_days_to_keep=[1, 2],  # Numbers from 0 to 4
     extra_cols_to_drop=[],
-) -> pd.DataFrame:
-    ## Feature engineering
-    df["day_of_week"] = pd.to_datetime(df["ActivityDateTime"]).dt.dayofweek
-
-    # Cyclical encoding for month
-    df["month_sin"] = np.sin(
-        2 * np.pi * pd.to_datetime(df["ActivityDateTime"]).dt.month / 12
-    )
-    df["month_cos"] = np.cos(
-        2 * np.pi * pd.to_datetime(df["ActivityDateTime"]).dt.month / 12
-    )
-
-    df["therapy_length_days"] = (
-        pd.to_datetime(df["ActivityDateTime"]) - pd.to_datetime(df["Therapy Start"])
-    ).dt.days
-    df["therapy_week"] = df["therapy_length_days"] // 7
-
+) -> FeatureSets:
     # Useful for indexing but will not be in the final model
     df["ActivityDateTime"] = pd.to_datetime(df["ActivityDateTime"], format=FORMAT_MIN)
 
@@ -34,49 +151,64 @@ def engineer_features(
     df["steps_45_to_60m"] = df["Steps"].shift(3)
     df = df.drop("Steps", axis=1)
 
-    # Hrv
+    # Cyclical encodings
+    day_of_week = pd.to_datetime(df["ActivityDateTime"]).dt.dayofweek
+    df["day_of_week_sin"] = np.sin(2 * np.pi * day_of_week / 7)
+    df["day_of_week_cos"] = np.cos(2 * np.pi * day_of_week / 7)
+
+    month = pd.to_datetime(df["ActivityDateTime"]).dt.month
+    df["month_sin"] = np.sin(2 * np.pi * month / 12)
+    df["month_cos"] = np.cos(2 * np.pi * month / 12)
+
+    df["therapy_length_days"] = (
+        pd.to_datetime(df["ActivityDateTime"]) - pd.to_datetime(df["Therapy Start"])
+    ).dt.days
+    df["therapy_week"] = df["therapy_length_days"] // 7
+
+    # Overnight HRV
     df["hrv_sdann_overnight_diff"] = df["hrv_sdann_overnight"] - df["hrv_sdann_avg_7d"]
-    # df = df.drop(["hrv_sdann_overnight", "hrv_sdann_avg_7d"], axis=1)
 
-    # StressLevelValueAverage
-    df["StressLevelValueAverage_15m"] = df["StressLevelValueAverage"]
-    df["StressLevelValueAverage_30m"] = (
-        df["StressLevelValueAverage"].rolling(window=2, min_periods=1).sum()
-    )
-    df["StressLevelValueAverage_45m"] = (
-        df["StressLevelValueAverage"].rolling(window=3, min_periods=1).sum()
-    )
-    df["StressLevelValueAverage_60m"] = (
-        df["StressLevelValueAverage"].rolling(window=4, min_periods=1).sum()
-    )
-    df = df.drop("StressLevelValueAverage", axis=1)
+    # Stress level (based on momentary HRV)
+    df["stress_avg_garmin_0_to_15m"] = df.pop("StressLevelValueAverage")
+    df["stress_avg_garmin_15_to_30m"] = df["stress_avg_garmin_0_to_15m"].shift(1)
+    df["stress_avg_garmin_30_to_45m"] = df["stress_avg_garmin_0_to_15m"].shift(2)
+    df["stress_avg_garmin_45_to_60m"] = df["stress_avg_garmin_0_to_15m"].shift(3)
 
+    # Including both "Medication " and "Type of medication" reduces accuracy bc of collinearity?
+    df = df.drop(
+        ["Type of medication", "Medication ", "Diagnosis"],
+        axis=1,
+    )
+
+    df = df.drop(
+        [
+            # A list of careers that is too diverse to be useful
+            "Employment Status",
+            # Collinear with "Parental Status"
+            "Parent.WidowedSingle",
+            "Parent.Married",
+            "Parent.SeparatedDivorced",
+            "Parent.Engaged.Together",
+            "ParticipatingParent.Sex",
+        ],
+        axis=1,
+    )
     # Drop features
     df = df.drop(
         [
-            # "Diagnosis",
-            # "Medication ",
             "CDI start date",
             "PDI start date",
-            "PDI end date",
-            "Type of medication",
             "Medication start date",
             "Week",
             "Therapy session",
             "Therapy Start",
+            # Not known when the study begins
             "Therapy End",
-            "Education Status",
-            "Parental Status",
-            "Employment Status",
-            # "Pre.ECBI",
-            # "Pre.ECBI.Prob",
             "Post.ECBI",
             "Post.ECBI.Prob",
+            "PDI end date",
             "QuitStudy",
-            "ParticipatingParent.Sex",
-            "Parent-PhoneType",
             # Data that is only available as "real time data" (more battery use?) in Companion SDK
-            # NOTE: Removing these actually improves model accuracy?
             "DurationInSeconds",  # total active time
             "DistanceInMeters",
             "ActiveKilocalories",
@@ -89,7 +221,9 @@ def engineer_features(
         # Sleep
         + [
             f"{prefix}_T-{day}"
-            for day in range(*sleep_lookback_range)
+            for day in [
+                day for day in SLEEP_LOOKBACK_DAYS if day not in sleep_days_to_keep
+            ]
             for prefix in [
                 "awake",
                 "deep",
@@ -143,22 +277,19 @@ def engineer_features(
         return df
 
     df = yn_to_bool(df)
-
-    # Convert categorical columns to dummy variables
-    df = pd.get_dummies(df, drop_first=True)
-
-    return df
+    return FeatureSets.create(df, sleep_days_to_keep)
 
 
 def prep_X_y(df: pd.DataFrame, response_column: str) -> tuple[pd.DataFrame, pd.Series]:
     X = df.drop(
         [
             "ActivityDateTime",
+            # response columns
             "tantrum_within_60m",
             "tantrum_within_45m",
             "tantrum_within_30m",
             "tantrum_within_15m",
-            # Useful for indexing
+            # These were useful for indexing but should not be in the model
             "Arm_Sham",
             "dyad",
             "therapy_week",
