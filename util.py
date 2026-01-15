@@ -16,6 +16,13 @@ FEATURE_SETS = {
         "tantrum_within_45m",
         "tantrum_within_60m",
     ],
+    "hr": [f"hr_moving_{stat}_10m" for stat in ["avg", "std", "min", "max"]],
+    "activity": [
+        "steps_0_to_15m",
+        "steps_15_to_30m",
+        "steps_30_to_45m",
+        "steps_45_to_60m",
+    ],
     "stress": [
         "stress_avg_garmin_0_to_15m",
         "stress_avg_garmin_15_to_30m",
@@ -79,7 +86,8 @@ class FeatureSetDataFrames(TypedDict):
     # response columns
     response: pd.DataFrame
     # features
-    watch: pd.DataFrame
+    hr: pd.DataFrame
+    activity: pd.DataFrame
     sleep: pd.DataFrame
     stress: pd.DataFrame
     overnight_hrv: pd.DataFrame
@@ -96,21 +104,6 @@ def sleep_features(sleep_days_to_keep) -> list[str]:
         for day in sleep_days_to_keep
         for prefix in SLEEP_FEAT_PREFIXES
     ]
-
-
-def all_features(self) -> pd.DataFrame:
-    return pd.concat(
-        [
-            self.watch,
-            self.therapy,
-            self.overnight_hrv,
-            self.stress,
-            self.medical_history,
-            self.demographics,
-            self.temporal,
-        ],
-        axis=1,
-    )
 
 
 def engineer_features(
@@ -257,16 +250,11 @@ def engineer_features(
     df = yn_to_bool(df)
 
     sleep_feature_names = sleep_features(sleep_days_to_keep)
-    all_other_features = [
-        feature for feature_set in FEATURE_SETS.values() for feature in feature_set
-    ] + sleep_feature_names
-
-    watch_feature_names = [col for col in df.columns if col not in all_other_features]
-
     return {
-        "index": df[FEATURE_SETS["index"]],
-        "response": df[FEATURE_SETS["response"]],
-        "watch": pd.get_dummies(df[watch_feature_names], drop_first=True),
+        "index": pd.get_dummies(df[FEATURE_SETS["index"]], drop_first=True),
+        "response": pd.get_dummies(df[FEATURE_SETS["response"]]),
+        "hr": pd.get_dummies(df[FEATURE_SETS["hr"]], drop_first=True),
+        "activity": pd.get_dummies(df[FEATURE_SETS["activity"]], drop_first=True),
         "sleep": pd.get_dummies(df[sleep_feature_names], drop_first=True),
         "stress": pd.get_dummies(df[FEATURE_SETS["stress"]], drop_first=True),
         "overnight_hrv": pd.get_dummies(
