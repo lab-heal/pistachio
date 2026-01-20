@@ -67,6 +67,21 @@ FEATURE_SETS = {
     ],
 }
 
+CATEGORICAL_FEATURES = [
+    "Diag.ADHD",
+    "Diag.ASD",
+    "Diag.Anxiety",
+    "Diag.SAD",
+    "Child.On.Antidepressants",
+    "Child.On.Stimulants",
+    "Child.On.Non.Stimulants",
+    "Child sex",
+    "Education Status",
+    "Parent-PhoneType",
+    "Parental Status",
+    "BothParentsInStudy",
+]
+
 
 SLEEP_FEAT_PREFIXES = (
     "awake",
@@ -150,7 +165,6 @@ def engineer_features(
         ["Type of medication", "Medication ", "Diagnosis"],
         axis=1,
     )
-
     df = df.drop(
         [
             # A list of careers that is too diverse to be useful
@@ -248,24 +262,28 @@ def engineer_features(
         return df
 
     df = yn_to_bool(df)
-
     sleep_feature_names = sleep_features(sleep_days_to_keep)
-    return {
-        "index": pd.get_dummies(df[FEATURE_SETS["index"]], drop_first=True),
-        "response": pd.get_dummies(df[FEATURE_SETS["response"]]),
-        "hr": pd.get_dummies(df[FEATURE_SETS["hr"]], drop_first=True),
-        "activity": pd.get_dummies(df[FEATURE_SETS["activity"]], drop_first=True),
-        "sleep": pd.get_dummies(df[sleep_feature_names], drop_first=True),
-        "stress": pd.get_dummies(df[FEATURE_SETS["stress"]], drop_first=True),
-        "overnight_hrv": pd.get_dummies(
-            df[FEATURE_SETS["overnight_hrv"]], drop_first=True
-        ),
-        "medical": pd.get_dummies(df[FEATURE_SETS["medical"]], drop_first=True),
-        "therapy": pd.get_dummies(df[FEATURE_SETS["therapy"]], drop_first=True),
-        "child_demo": pd.get_dummies(df[FEATURE_SETS["child_demo"]], drop_first=True),
-        "parent_demo": pd.get_dummies(df[FEATURE_SETS["parent_demo"]], drop_first=True),
-        "temporal": pd.get_dummies(df[FEATURE_SETS["temporal"]], drop_first=True),
+    for col in CATEGORICAL_FEATURES:
+        df[col] = df[col].astype("category")
+    feature_set_dfs: FeatureSetDataFrames = {
+        "index": df[FEATURE_SETS["index"]],
+        "response": df[FEATURE_SETS["response"]],
+        "hr": df[FEATURE_SETS["hr"]],
+        "activity": df[FEATURE_SETS["activity"]],
+        "sleep": df[sleep_feature_names],
+        "stress": df[FEATURE_SETS["stress"]],
+        "overnight_hrv": df[FEATURE_SETS["overnight_hrv"]],
+        "medical": df[FEATURE_SETS["medical"]],
+        "therapy": df[FEATURE_SETS["therapy"]],
+        "child_demo": df[FEATURE_SETS["child_demo"]],
+        "parent_demo": df[FEATURE_SETS["parent_demo"]],
+        "temporal": df[FEATURE_SETS["temporal"]],
     }
+
+    feature_set_dfs = {
+        k: pd.get_dummies(v, drop_first=True) for k, v in feature_set_dfs.items()
+    }  # ty:ignore[invalid-assignment]
+    return feature_set_dfs
 
 
 def prep_X_y(df: pd.DataFrame, response_column: str) -> tuple[pd.DataFrame, pd.Series]:
