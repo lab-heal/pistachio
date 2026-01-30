@@ -8,6 +8,7 @@ dependencies = [
     "flaml>=2.3.6",
     "ipykernel>=6.30.1",
     "ipywidgets>=8.1.7",
+    "jinja2>=3.1.6",
     "lightgbm>=4.6.0",
     "matplotlib>=3.10.6",
     "numpy>=2.3.2",
@@ -16,6 +17,7 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
     "shap==0.50.0",
+    "tableone>=0.9.5",
     "tqdm>=4.67.1",
     "xgboost>=3.0.3",
 ]
