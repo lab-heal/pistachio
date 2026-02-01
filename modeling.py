@@ -125,6 +125,7 @@ def train_model(
     df_val,
     model: Any,
     tuning_method: TuningMethod,
+    random_state: int | None,
 ):
     model = clone(model)
     X_train, y_train = prep_X_y(pd.concat([df_train, df_val]), "tantrum_within_60m")
@@ -142,6 +143,7 @@ def train_model(
             thresholds=thresholds,
             cv=cv,
             n_jobs=-1,
+            random_state=random_state,
         )
         tuned_model.fit(X_train, y_train)
         return tuned_model
@@ -152,6 +154,7 @@ def train_model(
             thresholds=thresholds,
             cv=cv,
             n_jobs=-1,
+            random_state=random_state,
         )
         tuned_model.fit(X_train, y_train)
         return tuned_model
@@ -162,6 +165,7 @@ def train_model(
             thresholds=thresholds,
             cv=cv,
             n_jobs=-1,
+            random_state=random_state,
         )
         tuned_model.fit(X_train, y_train)
         return tuned_model
@@ -192,6 +196,7 @@ def train_and_get_dyad_models(
     week: int,
     dyad_models: dict[str, TunedThresholdClassifierCV],
     tuning_method: TuningMethod,
+    random_state: int | None = None,
 ):
     min_week = df_test["therapy_week"].min()
     if week == min_week:
@@ -216,6 +221,7 @@ def train_and_get_dyad_models(
                     df_val,
                     dyad_models[dyad].estimator,
                     tuning_method,
+                    random_state,
                 )
         case _:
             raise ValueError(f"Unknown mode: {mode}")
@@ -229,6 +235,7 @@ def retrain_and_predict(
     df_test: pd.DataFrame,
     mode: str,
     tuning_method: TuningMethod,
+    random_state: int | None = None,
 ):
     dyad_models = {d: base_model for d in df_test["dyad"].unique()}
     weekly_results = []
@@ -243,6 +250,7 @@ def retrain_and_predict(
             week,
             dyad_models=dyad_models,
             tuning_method=tuning_method,
+            random_state=random_state,
         )
         weekly_models.append((week, dyad_models))
         week_df = df_test[df_test["therapy_week"] == week]
@@ -312,6 +320,7 @@ def eval_model_on_feature_sets(
     estimator: str,
     mode: str,
     tuning_method: TuningMethod,
+    random_state: int | None = None,
     verbose: bool = False,
 ) -> dict[str, Any]:
     feature_set_results = {}
@@ -329,22 +338,29 @@ def eval_model_on_feature_sets(
             axis=1,
         )
         combined_df = combined_df[
+            combined_df["therapy_week"].between(weeks[0], weeks[1])
+        ]
+        # combined_df = combined_df[
+        #     (
+        #         combined_df["ActivityDateTime"].dt.hour.between(
+        #             active_hours[0], active_hours[1]
+        #         )
+        #     )
+        # ]
+
+        df_train = combined_df[combined_df["Arm_Sham"]]
+        df_test = combined_df[~combined_df["Arm_Sham"]]
+        df_test = df_test[
             (
-                combined_df["ActivityDateTime"].dt.hour.between(
+                df_test["ActivityDateTime"].dt.hour.between(
                     active_hours[0], active_hours[1]
                 )
             )
         ]
-        combined_df = combined_df[
-            combined_df["therapy_week"].between(weeks[0], weeks[1])
-        ]
-
-        df_train = combined_df[combined_df["Arm_Sham"]]
-        df_test = combined_df[~combined_df["Arm_Sham"]]
 
         # Create 5-fold CV based on "dyad"
         X_train, y_train = prep_X_y(df_train, "tantrum_within_60m")
-        automl = AutoML()
+        automl = AutoML(random_state=random_state)
         automl.fit(
             X_train,
             y_train,
@@ -355,7 +371,9 @@ def eval_model_on_feature_sets(
             split_type="group",
             groups=df_train["dyad"],
             verbose=verbose,
+            retrain_full=False,
         )
+        print(automl.best_config)
 
         if estimator == "lrl2":
             # Impute missing following https://microsoft.github.io/FLAML/docs/FAQ/#how-does-flaml-handle-missing-values
@@ -393,9 +411,15 @@ def eval_model_on_feature_sets(
             pd.DataFrame(),
             model,
             tuning_method=tuning_method,
+            random_state=random_state,
         )
         results, models = retrain_and_predict(
-            tuned_model, df_train, df_test, mode=mode, tuning_method=tuning_method
+            tuned_model,
+            df_train,
+            df_test,
+            mode=mode,
+            tuning_method=tuning_method,
+            random_state=random_state,
         )
 
         data_dir = Path("./intermediate_data")
