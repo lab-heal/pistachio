@@ -337,9 +337,7 @@ def eval_model_on_feature_sets(
             + [dfs[fs] for fs in features],
             axis=1,
         )
-        combined_df = combined_df[
-            combined_df["therapy_week"].between(weeks[0], weeks[1])
-        ]
+        combined_df = combined_df[combined_df["therapy_week"].between(0, 20)]
         # combined_df = combined_df[
         #     (
         #         combined_df["ActivityDateTime"].dt.hour.between(
@@ -350,6 +348,7 @@ def eval_model_on_feature_sets(
 
         df_train = combined_df[combined_df["Arm_Sham"]]
         df_test = combined_df[~combined_df["Arm_Sham"]]
+        df_test = df_test[df_test["therapy_week"].between(weeks[0], weeks[1])]
         df_test = df_test[
             (
                 df_test["ActivityDateTime"].dt.hour.between(
