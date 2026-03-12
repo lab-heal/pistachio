@@ -1,12 +1,9 @@
+import pickle
 from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
-
-from util import prep_X_y
-import pickle
-from typing import Any, Literal
-
 from flaml import AutoML
 from sklearn import clone
 from sklearn.compose import ColumnTransformer, make_column_selector
@@ -27,7 +24,7 @@ from sklearn.pipeline import Pipeline
 from tqdm.auto import tqdm
 
 from hr_model import HrModel
-from util import FeatureSetDataFrames
+from util import FeatureSetDataFrames, prep_X_y
 
 
 def specificity_score(y_true, y_pred) -> float:
@@ -96,10 +93,12 @@ TuningMethod = (
 )
 
 
-def create_dyad_cv(df_train: pd.DataFrame, n_splits: int = 5) -> PredefinedSplit:
+def create_dyad_cv(
+    df_train: pd.DataFrame, n_splits: int = 5, random_state: int | None = None
+) -> PredefinedSplit:
     # Create 5-fold CV based on "dyad"
     dyad_labels = df_train["dyad"]
-    skf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    skf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     folds = np.zeros(len(df_train), dtype=int)
     for fold_idx, (_, val_idx) in enumerate(
         skf.split(np.zeros(len(dyad_labels)), dyad_labels)
@@ -130,7 +129,7 @@ def train_model(
     model = clone(model)
     X_train, y_train = prep_X_y(pd.concat([df_train, df_val]), "tantrum_within_60m")
     cv = (
-        create_dyad_cv(df_train)
+        create_dyad_cv(df_train, random_state=random_state)
         if len(df_val) == 0
         else PredefinedSplit(test_fold=[-1] * len(df_train) + [0] * len(df_val))
     )
@@ -142,7 +141,6 @@ def train_model(
             scoring="balanced_accuracy",
             thresholds=thresholds,
             cv=cv,
-            n_jobs=-1,
             random_state=random_state,
         )
         tuned_model.fit(X_train, y_train)
@@ -153,7 +151,6 @@ def train_model(
             scoring=make_scorer(youdens_j_score),
             thresholds=thresholds,
             cv=cv,
-            n_jobs=-1,
             random_state=random_state,
         )
         tuned_model.fit(X_train, y_train)
@@ -164,7 +161,6 @@ def train_model(
             scoring=make_scorer(cost_sensitive_score),
             thresholds=thresholds,
             cv=cv,
-            n_jobs=-1,
             random_state=random_state,
         )
         tuned_model.fit(X_train, y_train)
@@ -338,14 +334,7 @@ def eval_model_on_feature_sets(
             axis=1,
         )
         combined_df = combined_df[combined_df["therapy_week"].between(0, 20)]
-        # combined_df = combined_df[
-        #     (
-        #         combined_df["ActivityDateTime"].dt.hour.between(
-        #             active_hours[0], active_hours[1]
-        #         )
-        #     )
-        # ]
-
+        
         df_train = combined_df[combined_df["Arm_Sham"]]
         df_test = combined_df[~combined_df["Arm_Sham"]]
         df_test = df_test[df_test["therapy_week"].between(weeks[0], weeks[1])]
