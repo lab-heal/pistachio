@@ -15,6 +15,7 @@ FEATURE_SETS = {
         "tantrum_within_30m",
         "tantrum_within_45m",
         "tantrum_within_60m",
+        "time_before_next_tantrum",
     ],
     "hr": [f"hr_moving_{stat}_10m" for stat in ["avg", "std", "min", "max"]],
     "activity": [
@@ -265,6 +266,7 @@ def engineer_features(
     sleep_feature_names = sleep_features(sleep_days_to_keep)
     for col in CATEGORICAL_FEATURES:
         df[col] = df[col].astype("category")
+    df["time_before_next_tantrum"] = pd.to_timedelta(df["time_before_next_tantrum"])
     feature_set_dfs: FeatureSetDataFrames = {
         "index": df[FEATURE_SETS["index"]],
         "response": df[FEATURE_SETS["response"]],
@@ -290,16 +292,12 @@ def prep_X_y(df: pd.DataFrame, response_column: str) -> tuple[pd.DataFrame, pd.S
     X = df.drop(
         [
             "ActivityDateTime",
-            # response columns
-            "tantrum_within_60m",
-            "tantrum_within_45m",
-            "tantrum_within_30m",
-            "tantrum_within_15m",
             # These were useful for indexing but should not be in the model
             "Arm_Sham",
             "dyad",
             "therapy_week",
-        ],
+        ]
+        + FEATURE_SETS["response"],
         axis=1,
     )
     y = df[response_column].astype(int)
