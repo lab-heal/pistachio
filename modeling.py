@@ -130,8 +130,8 @@ def train_model(
     X_train, y_train = prep_X_y(pd.concat([df_train, df_val]), "tantrum_within_60m")
     cv = (
         create_dyad_cv(df_train, random_state=random_state)
-        if len(df_val) == 0
-        else PredefinedSplit(test_fold=[-1] * len(df_train) + [0] * len(df_val))
+        # if len(df_val) == 0
+        # else PredefinedSplit(test_fold=[-1] * len(df_train) + [0] * len(df_val))
     )
 
     thresholds = np.logspace(-5, 0, 100)
@@ -139,7 +139,6 @@ def train_model(
         tuned_model = TunedThresholdClassifierCV(
             model,
             scoring="balanced_accuracy",
-            thresholds=thresholds,
             cv=cv,
             random_state=random_state,
         )
@@ -334,7 +333,7 @@ def eval_model_on_feature_sets(
             axis=1,
         )
         combined_df = combined_df[combined_df["therapy_week"].between(0, 20)]
-        
+
         df_train = combined_df[combined_df["Arm_Sham"]]
         df_test = combined_df[~combined_df["Arm_Sham"]]
         df_test = df_test[df_test["therapy_week"].between(weeks[0], weeks[1])]
